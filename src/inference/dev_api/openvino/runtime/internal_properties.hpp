@@ -42,6 +42,12 @@ static constexpr Property<std::vector<PropertyName>, PropertyMutability::RO> cac
 static constexpr Property<bool, PropertyMutability::RO> caching_with_mmap{"CACHING_WITH_MMAP"};
 
 /**
+ * @brief Read-only property to get the header alignment (in bytes) for the model cache blob.
+ * @ingroup ov_dev_api_plugin_api
+ */
+static constexpr Property<size_t, PropertyMutability::RO> cache_header_alignment{"CACHE_HEADER_ALIGNMENT"};
+
+/**
  * @brief Allow to create exclusive_async_requests with one executor
  * @ingroup ov_dev_api_plugin_api
  */

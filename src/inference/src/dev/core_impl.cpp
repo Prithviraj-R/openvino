@@ -1649,11 +1649,14 @@ ov::SoPtr<ov::ICompiledModel> ov::CoreImpl::load_model_from_cache(
 
                 ov::util::VariantVisitor model_importer{
                     [&](const ov::Tensor& compiled_blob) -> ov::SoPtr<ov::ICompiledModel> {
-                        const ov::Tensor compiled_blob_without_header{compiled_blob,
-                                                                      {compiled_blob_offset},
-                                                                      {compiled_blob.get_size()}};
-                        return context ? plugin.import_model(compiled_blob_without_header, context, update_config)
-                                       : plugin.import_model(compiled_blob_without_header, update_config);
+                        auto compiled_blob_without_header =
+                            std::make_shared<ov::Tensor>(compiled_blob,
+                                                         ov::Coordinate{compiled_blob_offset},
+                                                         ov::Coordinate{compiled_blob.get_size()});
+                        auto imported_model =
+                            context ? plugin.import_model(*compiled_blob_without_header, context, update_config)
+                                    : plugin.import_model(*compiled_blob_without_header, update_config);
+                        return ov::SoPtr<ov::ICompiledModel>(imported_model._ptr, compiled_blob_without_header);
                     },
                     [&](std::reference_wrapper<std::istream> stream) -> ov::SoPtr<ov::ICompiledModel> {
                         return context ? plugin.import_model(stream, context, update_config)

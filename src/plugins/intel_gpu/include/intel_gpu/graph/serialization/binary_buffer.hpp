@@ -12,47 +12,91 @@
 #include "helpers.hpp"
 #include "bind.hpp"
 
+const uint32_t PAGE_SIZE = 4096;
+const uint32_t SUB_BUFFER_ALIGNMENT = 128;
+
 namespace cldnn {
 struct memory;
 
 class BinaryOutputBuffer : public OutputBuffer<BinaryOutputBuffer> {
 public:
-    BinaryOutputBuffer(std::ostream& stream)
-    : OutputBuffer<BinaryOutputBuffer>(this), stream(stream), _impl_params(nullptr), _strm(nullptr) {}
+    BinaryOutputBuffer(std::ostream& stream, bool encrypted = false)
+        : OutputBuffer<BinaryOutputBuffer>(this),
+          stream(stream),
+          _impl_params(nullptr),
+          _strm(nullptr),
+          _is_encrypted(encrypted) {}
 
     virtual ~BinaryOutputBuffer() = default;
 
-    virtual void write(void const* data, std::streamsize size) {
-        auto const written_size = stream.rdbuf()->sputn(reinterpret_cast<const char*>(data), size);
-        OPENVINO_ASSERT(written_size == size,
-                        "[GPU] Failed to write " + std::to_string(size) + " bytes to stream! Wrote " +
-                            std::to_string(written_size));
+    virtual void write(const void* data, std::streamsize size) {
+        const auto written_size = stream.rdbuf()->sputn(reinterpret_cast<const char*>(data), size);
+        OPENVINO_ASSERT(written_size == size, "[GPU] Failed to write " + std::to_string(size) + " bytes to stream! Wrote " + std::to_string(written_size));
     }
 
     virtual void flush() {}
 
-    void setKernelImplParams(void* impl_params) { _impl_params = impl_params; }
-    void* getKernelImplParams() const { return _impl_params; }
-    void set_stream(void* strm) { _strm = strm; }
-    void* get_stream() const { return _strm; }
+    void setKernelImplParams(void* impl_params) {
+        _impl_params = impl_params;
+    }
+    void* getKernelImplParams() const {
+        return _impl_params;
+    }
+    void set_stream(void* strm) {
+        _strm = strm;
+    }
+    void* get_stream() const {
+        return _strm;
+    }
+    bool is_encrypted() const {
+        return _is_encrypted;
+    }
+    size_t get_offset() const {
+        return stream.tellp();
+    }
+    bool is_offset_page_aligned() const {
+        return (get_offset() % PAGE_SIZE == 0);
+    }
+
+    size_t get_bytes_to_page_boundary() const {
+        return PAGE_SIZE - (get_offset() % PAGE_SIZE);
+    }
+
+    bool is_offset_sub_buffer_aligned() const {
+        return (get_offset() % SUB_BUFFER_ALIGNMENT == 0);
+    }
+
+    size_t get_bytes_to_sub_buffer_boundary() const {
+        return SUB_BUFFER_ALIGNMENT - (get_offset() % SUB_BUFFER_ALIGNMENT);
+    }
 
 private:
     std::ostream& stream;
     void* _impl_params;
     void* _strm;
+    bool _is_encrypted;
 };
 
 class BinaryInputBuffer : public InputBuffer<BinaryInputBuffer> {
 public:
-    BinaryInputBuffer(std::istream& stream, engine& engine)
-    : InputBuffer<BinaryInputBuffer>(this, engine), _stream(stream), _impl_params(nullptr) {}
+    BinaryInputBuffer(std::istream& stream, engine& engine, bool encrypted = false)
+        : InputBuffer<BinaryInputBuffer>(this, engine),
+          _stream(stream),
+          _impl_params(nullptr),
+          _tensor_base_ptr(nullptr),
+          _is_encrypted(encrypted) {}
+    BinaryInputBuffer(std::istream& stream, engine& engine, const size_t* _tensor_bp, bool encrypted = false)
+        : InputBuffer<BinaryInputBuffer>(this, engine),
+          _stream(stream),
+          _impl_params(nullptr),
+          _tensor_base_ptr(_tensor_bp),
+          _is_encrypted(encrypted) {}
 
     virtual ~BinaryInputBuffer() = default;
 
     virtual void read(void* const data, std::streamsize size) {
-        auto const read_size = _stream.rdbuf()->sgetn(reinterpret_cast<char*>(data), size);
-        OPENVINO_ASSERT(read_size == size,
-            "[GPU] Failed to read " + std::to_string(size) + " bytes from stream! Read " + std::to_string(read_size));
+        const auto read_size = _stream.rdbuf()->sgetn(reinterpret_cast<char*>(data), size);
+        OPENVINO_ASSERT(read_size == size, "[GPU] Failed to read " + std::to_string(size) + " bytes from stream! Read " + std::to_string(read_size));
     }
 
     /// Access the underlying streambuf. Callers that know their backing buffer
@@ -62,19 +106,79 @@ public:
     std::streambuf* get_streambuf() const {
         return _stream.rdbuf();
     }
+    bool has_mmap_tensor() const {
+        return _tensor_base_ptr != nullptr;
+    }
 
-    void setKernelImplParams(void* impl_params) { _impl_params = impl_params; }
-    void* getKernelImplParams() const { return _impl_params; }
+    const size_t* get_mmap_tensor() const {
+        if (!_tensor_base_ptr) {
+            throw std::runtime_error("Direct access not available - no tensor base pointer");
+        }
+        return _tensor_base_ptr;
+    }
+
+    size_t get_stream_size() const {
+        std::streampos current_pos = _stream.tellg();
+        if (current_pos == std::streampos(-1)) {
+            throw std::runtime_error("Failed to get stream position");
+        }
+        _stream.seekg(0, std::ios::end);
+        std::streampos end_pos = _stream.tellg();
+        _stream.seekg(0, std::ios::beg);
+        std::streampos start_pos = _stream.tellg();
+        _stream.seekg(current_pos);
+        return static_cast<size_t>(end_pos) - static_cast<size_t>(start_pos);
+    }
+
+    size_t get_offset() const {
+        return _stream.tellg();
+    }
+
+    void seek_current_ptr(std::streamsize size) {
+        // Get current stream position
+        std::streampos current_pos = _stream.tellg();
+        if (current_pos == std::streampos(-1)) {
+            throw std::runtime_error("Failed to get stream position");
+        }
+        // Advance stream position
+        _stream.seekg(current_pos + static_cast<std::streampos>(size));
+    }
+    bool is_offset_page_aligned() const {
+        return (get_offset() % PAGE_SIZE == 0);
+    }
+
+    size_t get_bytes_to_page_boundary() const {
+        return PAGE_SIZE - (get_offset() % PAGE_SIZE);
+    }
+
+    bool is_offset_sub_buffer_aligned() const {
+        return (get_offset() % SUB_BUFFER_ALIGNMENT == 0);
+    }
+
+    size_t get_bytes_to_sub_buffer_boundary() const {
+        return SUB_BUFFER_ALIGNMENT - (get_offset() % SUB_BUFFER_ALIGNMENT);
+    }
+    void setKernelImplParams(void* impl_params) {
+        _impl_params = impl_params;
+    }
+    void* getKernelImplParams() const {
+        return _impl_params;
+    }
+    bool is_encrypted() const {
+        return _is_encrypted;
+    }
 
 private:
     std::istream& _stream;
     void* _impl_params;
+    const size_t* _tensor_base_ptr;
+    bool _is_encrypted;
 };
 
 class EncryptedBinaryOutputBuffer : public BinaryOutputBuffer {
 public:
     EncryptedBinaryOutputBuffer(std::ostream& stream, std::function<std::string(const std::string&)> encrypt)
-        : BinaryOutputBuffer(stream),
+        : BinaryOutputBuffer(stream, true),
           encrypt(encrypt) {
         OPENVINO_ASSERT(encrypt);
     }
@@ -94,16 +198,14 @@ public:
 
 private:
     std::string
-        plaintext_str;  // Not using stringstream here because passing to encrypt() would produce an additional copy.
+        plaintext_str;  // Not using stringstream here because passing to encrypt() would create an additional copy.
     std::function<std::string(const std::string&)> encrypt;
 };
 
 class EncryptedBinaryInputBuffer : public BinaryInputBuffer {
 public:
-    EncryptedBinaryInputBuffer(std::istream& stream,
-                               engine& engine,
-                               std::function<std::string(const std::string&)> decrypt)
-        : BinaryInputBuffer(stream, engine),
+    EncryptedBinaryInputBuffer(std::istream& stream, engine& engine, std::function<std::string(const std::string&)> decrypt)
+        : BinaryInputBuffer(stream, engine, true),
           decrypt(decrypt) {
         OPENVINO_ASSERT(decrypt);
 
@@ -113,19 +215,15 @@ public:
         // Not reading directly to plaintext_stream because decrypt(plaintext_stream.str()) would create an additional
         // copy.
         std::string str(bytes, 0);
-        BinaryInputBuffer::read(
-            make_data(const_cast<void*>(reinterpret_cast<const void*>(str.c_str())), str.size()).data,
-            str.size());
+        BinaryInputBuffer::read(make_data(const_cast<void*>(reinterpret_cast<const void*>(str.c_str())), str.size()).data, str.size());
         plaintext_stream.str(decrypt(str));
     }
 
     ~EncryptedBinaryInputBuffer() override = default;
 
     void read(void* const data, std::streamsize size) override {
-        auto const read_size = plaintext_stream.rdbuf()->sgetn(reinterpret_cast<char*>(data), size);
-        OPENVINO_ASSERT(
-            read_size == size,
-            "[GPU] Failed to read " + std::to_string(size) + " bytes from stream! Read " + std::to_string(read_size));
+        const auto read_size = plaintext_stream.rdbuf()->sgetn(reinterpret_cast<char*>(data), size);
+        OPENVINO_ASSERT(read_size == size, "[GPU] Failed to read " + std::to_string(size) + " bytes from stream! Read " + std::to_string(read_size));
     }
 
 private:

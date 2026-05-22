@@ -111,6 +111,7 @@
 
 using namespace cldnn;
 using namespace ov::intel_gpu;
+const uint32_t PAGE_ALIGNMENT = 4096;
 
 static ov::threading::IStreamsExecutor::Config make_task_executor_config(const ExecutionConfig& config, std::string tags, int num_streams = 0) {
     int streams = (num_streams > 0) ? num_streams : config.get_compilation_num_threads();
@@ -1945,7 +1946,7 @@ void program::save(cldnn::BinaryOutputBuffer& ob) const {
     }
 
     ob << allocating_order.size();
-    for (auto const& node_id : allocating_order) {
+    for (const auto& node_id : allocating_order) {
         ob << node_id;
     }
 
@@ -1953,6 +1954,11 @@ void program::save(cldnn::BinaryOutputBuffer& ob) const {
     for (auto& state_initializer : state_initializers) {
         ob << state_initializer.first;
         ob << state_initializer.second;
+    }
+
+    if (!ob.is_encrypted() && !ob.is_offset_page_aligned()) {
+        std::vector<uint8_t> pad(ob.get_bytes_to_page_boundary(), 0);
+        ob << make_data(pad.data(), pad.size());
     }
 }
 
@@ -1975,6 +1981,17 @@ void program::load(cldnn::BinaryInputBuffer& ib,
         } else {
             OPENVINO_THROW("Weights path or model is required for cache mode OPTIMIZE_SIZE");
         }
+    }
+
+    const bool can_use_mmap_zero_copy = ib.has_mmap_tensor() && _engine.get_device_info().arch >= gpu_arch::xe2 &&
+                                        _engine.get_device_info().dev_type == device_type::integrated_gpu && !_config.get_enable_weightless();
+    memory_ptr model_tensor_base_ptr = nullptr;
+    if (can_use_mmap_zero_copy) {
+        model_tensor_base_ptr =
+            ib.get_engine().create_mmap_hostbuffer(ib.get_mmap_tensor(),
+                                                   ib.get_stream_size(),
+                                                   allocation_type::usm_host,
+                                                   layout({{static_cast<tensor::value_type>(ib.get_stream_size()), 1, 1, 1}, data_types::u8, format::bfyx}));
     }
 
     size_t num_nodes;
@@ -2004,7 +2021,7 @@ void program::load(cldnn::BinaryInputBuffer& ib,
         std::shared_ptr<cldnn::primitive> prim;
         ib >> prim;
         if (auto data_prim = dynamic_cast<cldnn::data*>(prim.get())) {
-            data_prim->load_weights(ib, weights_memory);
+            data_prim->load_weights(ib, weights_memory, model_tensor_base_ptr);
         }
         get_or_create(prim);
     }
@@ -2162,5 +2179,10 @@ void program::load(cldnn::BinaryInputBuffer& ib,
         ib >> variable_id;
         ib >> initializers;
         state_initializers[variable_id] = initializers;
+    }
+
+    if (!ib.is_encrypted() && !ib.is_offset_page_aligned()) {
+        std::vector<uint8_t> pad(ib.get_bytes_to_page_boundary(), 0);
+        ib >> make_data(pad.data(), pad.size());
     }
 }

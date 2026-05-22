@@ -28,7 +28,18 @@ protected:
     }
 
     pos_type seekoff(off_type off, std::ios_base::seekdir dir, std::ios_base::openmode which = std::ios_base::in) override {
-        return _pos;
+        if (which & std::ios_base::out) {
+            // Output is append-only; the write position is always at the end of the buffer.
+            return static_cast<pos_type>(_buf.size());
+        }
+        // Input: handle beg/end/cur seeking so that tellg(), seekg(0, beg), and seekg(0, end) work correctly.
+        if (dir == std::ios_base::beg) {
+            _pos = static_cast<size_t>(off);
+        } else if (dir == std::ios_base::end) {
+            _pos = _buf.size() + static_cast<size_t>(off);  // off is typically 0 or a negative offset
+        }
+        // dir == std::ios_base::cur: don't change _pos
+        return static_cast<pos_type>(_pos);
     }
 
     pos_type seekpos(pos_type pos, std::ios_base::openmode which = std::ios_base::in) override {
