@@ -36,7 +36,9 @@ protected:
         if (dir == std::ios_base::beg) {
             _pos = static_cast<size_t>(off);
         } else if (dir == std::ios_base::end) {
-            _pos = _buf.size() + static_cast<size_t>(off);  // off is typically 0 or a negative offset
+            // off is typically 0; negative offsets seek backwards from end.
+            auto new_pos = static_cast<std::make_signed_t<size_t>>(_buf.size()) + static_cast<off_type>(off);
+            _pos = (new_pos >= 0) ? static_cast<size_t>(new_pos) : 0;
         }
         // dir == std::ios_base::cur: don't change _pos
         return static_cast<pos_type>(_pos);
