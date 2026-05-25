@@ -162,8 +162,9 @@ memory::ptr ocl_engine::create_subbuffer(const memory& memory, const layout& new
 }
 
 memory_ptr ocl_engine::create_mmap_hostbuffer(const void* mmapped_address, size_t data_size, allocation_type _allocation_type, const layout output_layout) {
+    constexpr std::uintptr_t page_size = 4096;
     std::uintptr_t mmap_address = reinterpret_cast<std::uintptr_t>(mmapped_address);
-    std::uintptr_t aligned_addr = mmap_address & ~(static_cast<std::uintptr_t>(PAGE_SIZE) - 1);
+    std::uintptr_t aligned_addr = mmap_address & ~(page_size - 1);
     void* mmap_aligned_address = reinterpret_cast<void*>(aligned_addr);
     // Account for the alignment offset so the OpenCL buffer covers the full [mmapped_address, mmapped_address+data_size) range.
     size_t alignment_offset = mmap_address - aligned_addr;

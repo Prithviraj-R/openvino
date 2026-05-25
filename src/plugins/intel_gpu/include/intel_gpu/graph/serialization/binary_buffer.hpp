@@ -128,11 +128,28 @@ public:
         if (current_pos == std::streampos(-1)) {
             throw std::runtime_error("Failed to get stream position");
         }
+        const auto current_state = _stream.rdstate();
+
+        auto restore_stream_state = [&]() {
+            _stream.clear();
+            _stream.seekg(current_pos);
+            _stream.clear(current_state);
+        };
+
+        _stream.clear();
         _stream.seekg(0, std::ios::end);
         std::streampos end_pos = _stream.tellg();
+        if (end_pos == std::streampos(-1)) {
+            restore_stream_state();
+            throw std::runtime_error("Failed to get stream end position");
+        }
         _stream.seekg(0, std::ios::beg);
         std::streampos start_pos = _stream.tellg();
-        _stream.seekg(current_pos);
+        if (start_pos == std::streampos(-1)) {
+            restore_stream_state();
+            throw std::runtime_error("Failed to get stream start position");
+        }
+        restore_stream_state();
         return static_cast<size_t>(end_pos) - static_cast<size_t>(start_pos);
     }
 
