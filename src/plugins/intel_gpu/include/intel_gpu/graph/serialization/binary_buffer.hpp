@@ -107,7 +107,13 @@ public:
         return _stream.rdbuf();
     }
     bool has_mmap_tensor() const {
-        return _tensor_base_ptr != nullptr;
+        if (_tensor_base_ptr == nullptr)
+            return false;
+        // Zero-copy requires the tensor base to be page-aligned: the OpenCL buffer
+        // wrapping the mmap'd region starts at this address, and all sub-buffer
+        // offsets are computed relative to it.  If the base is not 4096-aligned,
+        // fall back to the normal copy path to avoid incorrect sub-buffer offsets.
+        return (reinterpret_cast<std::uintptr_t>(_tensor_base_ptr) % PAGE_SIZE == 0);
     }
 
     const size_t* get_mmap_tensor() const {
