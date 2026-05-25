@@ -150,8 +150,13 @@ public:
             restore_stream_state();
             throw std::runtime_error("Failed to get stream start position");
         }
+        auto stream_size = end_pos - start_pos;
+        if (stream_size < std::streamoff(0)) {
+            restore_stream_state();
+            throw std::runtime_error("Invalid stream size");
+        }
         restore_stream_state();
-        return static_cast<size_t>(end_pos) - static_cast<size_t>(start_pos);
+        return static_cast<size_t>(stream_size);
     }
 
     size_t get_offset() const {

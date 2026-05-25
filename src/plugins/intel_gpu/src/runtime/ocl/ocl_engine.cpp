@@ -171,7 +171,7 @@ memory_ptr ocl_engine::create_mmap_hostbuffer(const void* mmapped_address, size_
     size_t aligned_data_size = data_size + alignment_offset;
 
     auto tracker = std::make_shared<MemoryTracker>(this,
-                                                   const_cast<void*>(mmapped_address),  // Point directly to mmap'd memory
+                                                   const_cast<void*>(mmapped_address),  // Track the original tensor base; OCL buffer may use a page-aligned base.
                                                    data_size,
                                                    _allocation_type);
 

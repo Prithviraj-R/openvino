@@ -1656,6 +1656,7 @@ ov::SoPtr<ov::ICompiledModel> ov::CoreImpl::load_model_from_cache(
                         auto imported_model =
                             context ? plugin.import_model(*compiled_blob_without_header, context, update_config)
                                     : plugin.import_model(*compiled_blob_without_header, update_config);
+                        // Keep the tensor view alive for the lifetime of imported_model because import may reference this backing storage.
                         return ov::SoPtr<ov::ICompiledModel>(imported_model._ptr, compiled_blob_without_header);
                     },
                     [&](std::reference_wrapper<std::istream> stream) -> ov::SoPtr<ov::ICompiledModel> {
