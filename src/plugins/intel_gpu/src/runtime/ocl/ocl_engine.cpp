@@ -41,6 +41,7 @@ cl::PFN_clCreateFromD3D11Buffer cl::BufferDX::pfn_clCreateFromD3D11Buffer = NULL
 
 namespace cldnn {
 namespace ocl {
+static_assert((PAGE_SIZE & (PAGE_SIZE - 1)) == 0, "PAGE_SIZE must be a power of two");
 
 OPENVINO_SUPPRESS_DEPRECATED_START
 ocl_error::ocl_error(cl::Error const& err)
