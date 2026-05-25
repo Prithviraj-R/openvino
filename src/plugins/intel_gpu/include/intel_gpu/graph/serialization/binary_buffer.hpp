@@ -124,7 +124,7 @@ public:
         return _tensor_base_ptr;
     }
 
-    size_t get_stream_size() const {
+    size_t get_stream_size() {
         std::streampos current_pos = _stream.tellg();
         if (current_pos == std::streampos(-1)) {
             throw std::runtime_error("Failed to get stream position");
