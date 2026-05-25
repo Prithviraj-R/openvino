@@ -107,8 +107,9 @@ public:
         return _stream.rdbuf();
     }
     bool has_mmap_tensor() const {
-        if (_tensor_base_ptr == nullptr)
+        if (_tensor_base_ptr == nullptr) {
             return false;
+        }
         // Zero-copy requires the tensor base to be page-aligned: the OpenCL buffer
         // wrapping the mmap'd region starts at this address, and all sub-buffer
         // offsets are computed relative to it.  If the base is not 4096-aligned,
