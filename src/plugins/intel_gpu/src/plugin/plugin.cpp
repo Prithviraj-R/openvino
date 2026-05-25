@@ -461,11 +461,11 @@ std::shared_ptr<ov::ICompiledModel> Plugin::import_model(const ov::Tensor& model
                                                          const ov::AnyMap& config) const{
     // Store tensor base in thread-local storage
     g_mmap_tensor_base_for_import = static_cast<const size_t*>(model.data());
-    struct TensorBaseGuard {
-        ~TensorBaseGuard() {
+    struct MmapTensorBaseGuard {
+        ~MmapTensorBaseGuard() {
             g_mmap_tensor_base_for_import = nullptr;
         }
-    } tensor_base_guard;
+    } mmap_tensor_base_guard;
 
     ov::intel_gpu::ParallelMemStreamBuf par_buf(model.data(), model.get_byte_size());
     std::istream stream(&par_buf);

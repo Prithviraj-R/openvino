@@ -32,7 +32,7 @@ protected:
             // Output is append-only; the write position is always at the end of the buffer.
             return static_cast<pos_type>(_buf.size());
         }
-        auto try_set_pos = [&](std::streamoff new_pos) -> pos_type {
+        auto try_set_pos = [this](std::streamoff new_pos) -> pos_type {
             if (new_pos < 0 || new_pos > static_cast<std::streamoff>(_buf.size())) {
                 return pos_type(off_type(-1));
             }
