@@ -244,6 +244,7 @@ public:
 
         typedef union DataTypesKey_t {
             struct val_t {
+                uint32_t uint2 : 1;
                 uint32_t int4 : 1;
                 uint32_t uint4 : 1;
                 uint32_t int8 : 1;
@@ -259,7 +260,6 @@ public:
                 uint32_t F8E4M3 : 1;
                 uint32_t F8E5M2 : 1;
                 uint32_t F8E8M0 : 1;
-                uint32_t uint2 : 1;
             } val;
             uint32_t raw;
         } DataTypesKey;
